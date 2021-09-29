@@ -1,6 +1,44 @@
-from dataclasses import dataclass
-from functools import lru_cache
-from typing import List, Iterator
+"""
+Было замечено, что у разработчиков веб-сайтов очень частая ошибка - это случайное добавление одного лишнего тега в html
+документ, который делает его некорректным. В рамках кампании по улучшению качества разрабатываемого программного
+обеспечения, было принято решение о разработке программы для автоматического исправления подобного рода ошибок.
+HTML-документ - это последовательность открывающих и закрывающих тегов. Открывающий тег - это последовательность
+английских букв, обособленных треугольными скобками с двух сторон. Пример - <html> . Закрывающий тег - это тоже самое,
+что и открывающих тег, но с дополнительным символом слеша после левой треугольной скобки. Пример - </html>.
+Тег </X> является закрывающим тегом к <Y>, если X = Y (<Y> тогда - это открывающих тег для </X>). Все теги
+регистронезависимые - это означает, что <HTML> и <html> - это один и тот же тег.
+Каждый тег определяет элемент на странице. Элемент может быть пустой - это означает, что после открывающего тега
+элемента, сразу стоит закрывающий. Элементы могут быть вложенными друг в друга. Это означает, что между открывающим и
+закрывающим тегом находятся еще какое-то количество элементов.
+При этом для корректного документа должны выполняться следующие свойства:
+    Для одного открывающего тега может быть ровно один закрывающий тег.
+    Для одного закрывающего тега может быть ровно один открывающий тег.
+    Элементы могут быть только строго вложенными друг в друга - перехлест элементов запрещен (например <x><y></x></y>).
+
+HTML-документ считается сломанным, если какое-то из этих свойств нарушается. Например, для данного тега не нашлось
+открывающего/закрывающего тега или существует перехлест в тегах.
+Для заданного HTML документа необходимо выяснить, является ли он сломанным или нет. Если документ является сломанным,
+то нужно узнать, не был ли он сломан случайно разработчиком (разработчик мог случайно добавить один лишний тег).
+То есть, если документ сломан, нужно проверить, можно ли его починить, удалив ровно один тег.
+
+Ограничения
+    Количество строк в документе h: 1 <= h <= 10^6.
+    Количество букв внутри тега k: 1 <= k <= 100.
+
+Формат входных данных
+Первая строка содержит одно целое число x — количество наборов входных данных. После следуют x наборов данных.
+Первая строка набора данных содержит одно число s - количество тегов в документе.
+Следующие s строк — это последовательность тегов в документе. По одному тегу на каждой строке.
+
+Формат выходных данных
+Для каждого набора данных необходимо определить, насколько сломан документ.
+Если документ корректен, необходимо вывести слово CORRECT.
+Если документ некорректен, но при этом его можно починить, удалив ровно один тег — вывести ALMOST <TAG>.
+Где <TAG> - это название тега, который необходимо удалить для починки. <TAG> необходимо выводить в верхнем регистре.
+Если документ некорректен и при этом его нельзя починить указанным способом — вывести INCORRECT.
+"""
+
+from typing import List, Iterable
 
 
 def input_int() -> int:
@@ -8,100 +46,54 @@ def input_int() -> int:
     return int(line)
 
 
-class TagsMismatchError(Exception):
-    def __init__(self, line: str):
-        self.line = line
+def read_tag():
+    return input().strip().upper()
 
 
-class TagsMismatchFatal(Exception):
-    pass
+def get_name(tag: str) -> str:
+    return tag.strip('</>')
 
 
-@dataclass(repr=False, eq=False, frozen=True)
-class TagInfo:
-    text: str
-
-    @property
-    @lru_cache()
-    def name(self):
-        return self.text.lower().strip('</>')
-
-    @property
-    @lru_cache()
-    def is_closing(self) -> bool:
-        return self.text.startswith('</')
-
-    def is_match(self, other: 'TagInfo') -> bool:
-        return self.is_closing != other.is_closing and self.name == other.name
+def is_closing(tag: str) -> bool:
+    return tag.startswith('</')
 
 
-def parse_tags(lines: List[str]) -> Iterator[TagInfo]:
-    for line in lines:
-        yield TagInfo(text=line)
+def is_match(first: str, second: str) -> bool:
+    return is_closing(first) != is_closing(second) and get_name(first) == get_name(second)
 
 
-def process_text_tag(tags_to_read: Iterator[TagInfo], tags_stack: List[TagInfo]) -> None:
-    curr_tag = next(tags_to_read)
-    if not curr_tag.is_closing:
-        tags_stack.append(curr_tag)
-        return
-
-    if not tags_stack:
-        raise TagsMismatchError(curr_tag.text)
-
-    prev_tag = tags_stack[-1]
-    if curr_tag.is_match(prev_tag):
-        tags_stack.pop()
-        return
-
-    if len(tags_stack) > 1 and curr_tag.is_match(tags_stack[-2]):
-        tags_stack.pop()
-        tags_stack.pop()
-        raise TagsMismatchError(prev_tag.text)
-
-    try:
-        next_tag = next(tags_to_read)
-    except StopIteration:
-        raise TagsMismatchError(curr_tag.text)
-
-    if next_tag.is_match(prev_tag):
-        tags_stack.pop()
-        raise TagsMismatchError(curr_tag.text)
-    raise TagsMismatchFatal()
+def check_tags(tags: Iterable[str], is_closings: bool) -> List[str]:
+    stack = []
+    errors = []
+    for tag in tags:
+        if is_closing(tag) == is_closings:
+            stack.append(tag)
+        elif stack and is_match(tag, stack[-1]):
+            stack.pop()
+        else:
+            errors.append(tag)
+        if len(errors) > 1:
+            return errors
+    return errors + stack
 
 
 def solve():
     count_of_docs = input_int()
     for _ in range(count_of_docs):
         count_of_tags = input_int()
-        lines = [input() for _ in range(count_of_tags)]
-        tags_to_read = parse_tags(lines)
-        last_error = None
-        tags_stack = []  # type: List[TagInfo]
-        has_fatal = False
+        all_tags = [read_tag() for _ in range(count_of_tags)]
 
-        while True:
-            try:
-                process_text_tag(tags_to_read, tags_stack)
-            except TagsMismatchError as error:
-                if last_error:
-                    has_fatal = True
-                    break
-                last_error = error.line
-            except TagsMismatchFatal:
-                has_fatal = True
-                break
-            except StopIteration:
-                break
-
-        if has_fatal or len(tags_stack) > 1 or (tags_stack and last_error):
-            print('INCORRECT')
-        elif tags_stack:
-            print(f'ALMOST {tags_stack[0].text}')
-        elif last_error:
-            print(f'ALMOST {last_error}')
-        else:
+        errors = check_tags(tags=all_tags, is_closings=False)
+        if not errors:
             print('CORRECT')
+        elif len(errors) == 1:
+            print(f'ALMOST {errors[0]}')
+        else:
+            errors = check_tags(tags=reversed(all_tags), is_closings=True)
+            if len(errors) == 1:
+                print(f'ALMOST {errors[0]}')
+            else:
+                print('INCORRECT')
 
 
 if __name__ == '__main__':
